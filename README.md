@@ -35,7 +35,8 @@ machine metadata in `data/fp8_bench.json`. Laptop, power mode not pinned.
 
 **e5m2:** cuBLASLt's heuristic offers no algo for the row-major strided
 batched e5m2 configuration on this stack (recorded as `null` cells in the
-JSON); kernel-side e5m2 times are in the sweep and track e4m3 to ~2%.
+JSON); kernel-side e5m2 times are in the sweep and track e4m3 within ~2%
+(7% at the n=16 batch=1 launch-noise floor).
 
 Launch-overhead exhibit (batch=1 row): the kernel's fixed cost is ~7.4 µs
 vs ~10 µs for cuBLASLt — the ~2.5 µs setup tax the tiny regime amortizes.
@@ -54,12 +55,15 @@ assertion at 3× that):
 | 32 | 3.34e-2 | 6.71e-2 | 2.01 | 3.34e-2 |
 | 64 | 3.34e-2 | 6.69e-2 | 2.00 | 3.34e-2 |
 
-Measured error is 7–15% of the 3× assertion bound; the e5m2/e4m3 ratio is
-2.0 as predicted by the mantissa count. cuBLASLt matches the kernel's error
-to printed precision — input quantization dominates, accumulation is FP32
-on both sides. FP4 e2m1 appendix (`test_fp4_accuracy`): measured 4–5× the
-e4m3 error, consistent with one mantissa bit vs three. Degenerate inputs:
-all-zeros give exact zeros; ±600-magnitude inputs saturate (SATFINITE
+Measured error is 7–14% of u·√K (2–5% of the 3× assertion bound); the
+e5m2/e4m3 ratio is 2.0 as predicted by the mantissa count. cuBLASLt matches
+the kernel's error to printed precision — input quantization dominates,
+accumulation is FP32 on both sides. FP4 e2m1 appendix (`test_fp4_accuracy`):
+measured 11.1–11.3× the e4m3 error — well above the 4× mantissa-count
+prediction, because on U(-1,1) data the e2m1 grid rounds every input to
+{0, ±0.5, ±1}: a quarter of the inputs become exact zeros and the error is
+absolute-grid dominated, not relative-roundoff dominated. Degenerate inputs:
+all-zeros give exact zeros; ±900-magnitude inputs saturate (SATFINITE
 quantization, counted: ~50% of entries) with no NaN/Inf in any output.
 
 ## Status
@@ -85,8 +89,8 @@ ships as measured.
 ## Layout
 
 - `docs/SPEC.md` — spec of record (kernel design, baseline config, tests)
-- `include/ftg/` — device kernels (header-only, hand-written, no CUTLASS)
-- `src/` — host drivers; `benchmarks/` — vs cuBLASLt, JSON out
+- `include/ftg/` — device kernels and host helpers (header-only, no CUTLASS)
+- `benchmarks/` — vs cuBLASLt, JSON out
 - `tests/` — correctness vs FP64 oracle, error-bound assertions
 - `tools/` — plots; `data/` — results
 

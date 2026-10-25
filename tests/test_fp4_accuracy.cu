@@ -1,7 +1,10 @@
 // FP4 e2m1 accuracy appendix (docs/SPEC.md): accuracy only, no vendor
 // baseline, no performance claim. e2m1 has one explicit mantissa bit
-// (u = 2^-2) vs e4m3's three (u = 2^-4), so the expected error is ~4x
-// e4m3's; the measured ratio is reported and asserted inside [2, 16].
+// (u = 2^-2) vs e4m3's three (u = 2^-4), for a naive mantissa-count
+// prediction of 4x e4m3's error. Measured is ~11x: on U(-1,1) data the
+// e2m1 grid rounds every input to {0, +-0.5, +-1}, so a quarter of the
+// inputs become exact zeros and the error is absolute-grid dominated, not
+// relative-roundoff dominated. Asserted inside [8, 16].
 
 #include <cmath>
 #include <cstdio>
@@ -59,8 +62,8 @@ int main() {
 
     const double ratio = rel_fp4 / rel_fp8;
     std::printf("n=%d e2m1 rel=%.4e e4m3 rel=%.4e ratio=%.2fx\n", n, rel_fp4, rel_fp8, ratio);
-    if (ratio < 2.0 || ratio > 16.0) {
-      std::fprintf(stderr, "FAIL: e2m1/e4m3 ratio %.2f outside [2, 16]\n", ratio);
+    if (ratio < 8.0 || ratio > 16.0) {
+      std::fprintf(stderr, "FAIL: e2m1/e4m3 ratio %.2f outside [8, 16]\n", ratio);
       ++failures;
     }
   }
