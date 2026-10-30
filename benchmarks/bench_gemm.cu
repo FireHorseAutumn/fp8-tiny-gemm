@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <cstdint>
 #include <ctime>
+#include <fstream>
+#include <string>
 #include <vector>
 #include <cuda_runtime.h>
 #include "ftg/host_util.hpp"
@@ -64,6 +66,13 @@ void json_reps(FILE* f, const std::vector<double>& r) {
   std::fprintf(f, "]");
 }
 
+std::string read_governor() {
+  std::ifstream in("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor");
+  std::string g;
+  if (in >> g) return g;
+  return "unknown";
+}
+
 }  // namespace
 
 int main() {
@@ -83,10 +92,11 @@ int main() {
   }
   std::fprintf(f, "{\n\"device\": \"%s\",\n\"compute_capability\": \"%d.%d\",\n"
                   "\"driver\": %d,\n\"cuda_runtime\": %d,\n\"timestamp\": %lld,\n"
-                  "\"governor_caveat\": \"laptop, power mode not pinned for this run\",\n"
+                  "\"cpu_governor\": \"%s\",\n"
                   "\"warmup\": %d,\n\"reps\": %d,\n\"results\": [\n",
                prop.name, prop.major, prop.minor, driver, runtime,
-               static_cast<long long>(std::time(nullptr)), kWarmup, kReps);
+               static_cast<long long>(std::time(nullptr)),
+               read_governor().c_str(), kWarmup, kReps);
 
   bool first = true;
   for (int n : {16, 32, 64}) {

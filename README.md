@@ -9,37 +9,43 @@ configuration). Registered as benchmark #6 in [kernel-vs-library](https://github
 In the launch-tax regime a hand-written kernel — one warp per matrix,
 register-resident, no workspace query, no per-call setup — was expected to
 beat cuBLASLt batched FP8 for M=N=K ≤ 64. **Measured: the win zone is n=16
-only.** At n=16 the kernel wins every batch point (0.75–0.85× vendor time);
-at n=32 and n=64 cuBLASLt's tensor-core path wins everywhere, up to 10.9×.
-The launch-tax hypothesis survives only at the smallest size tested.
+only.** At n=16 the kernel wins every batch point in the pinned table
+(0.65–0.87× vendor time); at n=32 and n=64 cuBLASLt's tensor-core path
+wins everywhere, up to 18.1×. The launch-tax hypothesis survives only at
+the smallest size tested. Stability caveat: the n=16 batch=65536 cell is
+bimodal even governor-pinned (kernel reps span 707–2282 µs inside a single
+run; one of four same-morning pinned runs lost 1.55× there) — the other
+three n=16 cells won in all four pinned runs.
 
 ## Results (RTX 5060 Laptop, sm_120, CUDA 13.2, driver 615.71.09)
 
 µs per batched call, median of 21 with [min, max]; raw per-rep timings and
-machine metadata in `data/fp8_bench.json`. Laptop, power mode not pinned.
+machine metadata in `data/fp8_bench.json`. Governor-pinned idle machine
+(performance governor, recorded in the JSON), 2026-10-30; the table is one
+pinned run, and the cross-run stability notes above apply.
 
 | n | batch | kernel | cuBLASLt | kernel/lt | winner |
 |--:|--:|--|--|--|--|
-| 16 | 1 | 7.4 [7.0, 9.4] | 9.9 [9.5, 12.1] | 0.75 | kernel |
-| 16 | 64 | 8.0 [7.4, 8.7] | 10.0 [9.8, 12.0] | 0.80 | kernel |
-| 16 | 1024 | 16.0 [14.0, 18.1] | 20.3 [19.0, 21.6] | 0.79 | kernel |
-| 16 | 65536 | 833.3 [828.8, 836.0] | 981.2 [916.7, 989.0] | 0.85 | kernel |
-| 32 | 1 | 28.0 [26.7, 31.0] | 10.8 [10.2, 12.3] | 2.59 | cublaslt |
-| 32 | 64 | 24.1 [22.8, 27.5] | 15.7 [13.5, 16.1] | 1.53 | cublaslt |
-| 32 | 1024 | 81.7 [79.4, 84.0] | 71.5 [70.8, 71.9] | 1.14 | cublaslt |
-| 32 | 65536 | 5931.9 [5306.2, 6067.9] | 4614.2 [4418.5, 5964.7] | 1.29 | cublaslt |
-| 64 | 1 | 108.3 [107.9, 111.6] | 10.0 [9.4, 12.2] | 10.85 | cublaslt |
-| 64 | 64 | 112.5 [111.3, 115.5] | 14.0 [12.6, 15.6] | 8.06 | cublaslt |
-| 64 | 1024 | 672.8 [656.1, 695.2] | 104.1 [103.7, 106.1] | 6.46 | cublaslt |
-| 64 | 65536 | 48336.0 [47824.1, 75029.8] | 6542.5 [6455.1, 6895.5] | 7.39 | cublaslt |
+| 16 | 1 | 5.9 [5.2, 13.5] | 6.8 [5.7, 14.0] | 0.86 | kernel |
+| 16 | 64 | 5.7 [5.3, 8.9] | 8.8 [7.6, 17.9] | 0.65 | kernel |
+| 16 | 1024 | 13.6 [13.2, 14.6] | 17.1 [16.7, 26.4] | 0.79 | kernel |
+| 16 | 65536 | 720.6 [707.5, 2282.3] | 828.4 [794.7, 831.4] | 0.87 | kernel |
+| 32 | 1 | 20.8 [19.8, 22.5] | 6.8 [6.3, 13.6] | 3.07 | cublaslt |
+| 32 | 64 | 20.2 [19.3, 22.0] | 10.8 [8.2, 11.8] | 1.86 | cublaslt |
+| 32 | 1024 | 75.7 [74.8, 81.5] | 68.3 [67.9, 77.4] | 1.11 | cublaslt |
+| 32 | 65536 | 4874.9 [4249.6, 4921.1] | 4225.4 [4200.3, 4812.5] | 1.15 | cublaslt |
+| 64 | 1 | 109.6 [108.0, 110.2] | 6.0 [5.6, 12.0] | 18.12 | cublaslt |
+| 64 | 64 | 112.2 [111.4, 121.0] | 11.0 [10.7, 22.1] | 10.22 | cublaslt |
+| 64 | 1024 | 604.2 [593.7, 629.9] | 88.5 [87.1, 98.8] | 6.82 | cublaslt |
+| 64 | 65536 | 39359.3 [38976.8, 54590.1] | 5726.0 [5550.9, 6912.9] | 6.87 | cublaslt |
 
 **e5m2:** cuBLASLt's heuristic offers no algo for the row-major strided
 batched e5m2 configuration on this stack (recorded as `null` cells in the
 JSON); kernel-side e5m2 times are in the sweep and track e4m3 within ~2%
 (7% at the n=16 batch=1 launch-noise floor).
 
-Launch-overhead exhibit (batch=1 row): the kernel's fixed cost is ~7.4 µs
-vs ~10 µs for cuBLASLt — the ~2.5 µs setup tax the tiny regime amortizes.
+Launch-overhead exhibit (batch=1 row): the kernel's fixed cost is ~5.9 µs
+vs ~6.8 µs for cuBLASLt — the ~1 µs setup tax the tiny regime amortizes.
 
 ![time vs batch](data/fp8_bench.png)
 
@@ -69,8 +75,10 @@ quantization, counted: ~50% of entries) with no NaN/Inf in any output.
 ## Status
 
 CV-4 built and measured 2026-10-25: CTest 2/2 (correctness + FP4 appendix),
-benchmark table above, win zone n=16. Per the kill criterion the table
-ships as measured.
+benchmark table above, win zone n=16. Governor-pinned idle-machine rerun
+2026-10-30: table re-filled (win zone unchanged; n=64 batch=1 loss deepened
+to 18.1x; the n=16 batch=65536 cell is bimodal even pinned — see the claim
+caveat). Per the kill criterion the table ships as measured.
 
 
 
