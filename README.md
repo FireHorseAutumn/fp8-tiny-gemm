@@ -1,28 +1,22 @@
-# fp8-tiny-gemm — batched tiny FP8 GEMM vs cuBLASLt (kvl benchmark #6)
+# fp8-tiny-gemm
 
 Hand-written batched tiny GEMM with FP8 storage and FP32 accumulation,
 measured against cuBLASLt's batched FP8 path (the library's best honest
-configuration). Registered as benchmark #6 in [kernel-vs-library](https://github.com/FireHorseAutumn/kernel-vs-library).
+configuration). Registered as benchmark #6 in
+[kernel-vs-library](https://github.com/FireHorseAutumn/kernel-vs-library).
 
-## Claim (measured)
+## Status
 
-In the launch-tax regime a hand-written kernel — one warp per matrix,
-register-resident, no workspace query, no per-call setup — was expected to
-beat cuBLASLt batched FP8 for M=N=K ≤ 64. **Measured: the win zone is n=16
-only.** At n=16 the kernel wins every batch point in the pinned table
-(0.65–0.87× vendor time); at n=32 and n=64 cuBLASLt's tensor-core path
-wins everywhere, up to 18.1×. The launch-tax hypothesis survives only at
-the smallest size tested. Stability caveat: the n=16 batch=65536 cell is
-bimodal even governor-pinned (kernel reps span 707–2282 µs inside a single
-run; one of four same-morning pinned runs lost 1.55× there) — the other
-three n=16 cells won in all four pinned runs.
+- CTest 2/2 (correctness + FP4 appendix); full benchmark and accuracy
+  tables measured and published, win zone n=16.
+- Recorded on an RTX 5060 Laptop (sm_120, CUDA 13.2, driver 615.71.09),
+  governor-pinned idle machine; µs per batched call, median of 21.
 
-## Results (RTX 5060 Laptop, sm_120, CUDA 13.2, driver 615.71.09)
+## Headline: the launch-tax win zone is n=16 only
 
-µs per batched call, median of 21 with [min, max]; raw per-rep timings and
-machine metadata in `data/fp8_bench.json`. Governor-pinned idle machine
-(performance governor, recorded in the JSON), 2026-10-30; the table is one
-pinned run, and the cross-run stability notes above apply.
+One warp per matrix, register-resident, no workspace query, no per-call
+setup, vs cuBLASLt batched FP8. µs per batched call, median of 21 with
+[min, max]:
 
 | n | batch | kernel | cuBLASLt | kernel/lt | winner |
 |--:|--:|--|--|--|--|
@@ -39,70 +33,56 @@ pinned run, and the cross-run stability notes above apply.
 | 64 | 1024 | 604.2 [593.7, 629.9] | 88.5 [87.1, 98.8] | 6.82 | cublaslt |
 | 64 | 65536 | 39359.3 [38976.8, 54590.1] | 5726.0 [5550.9, 6912.9] | 6.87 | cublaslt |
 
-**e5m2:** cuBLASLt's heuristic offers no algo for the row-major strided
-batched e5m2 configuration on this stack (recorded as `null` cells in the
-JSON); kernel-side e5m2 times are in the sweep and track e4m3 within ~2%
-(7% at the n=16 batch=1 launch-noise floor).
+## Key numbers
 
-Launch-overhead exhibit (batch=1 row): the kernel's fixed cost is ~5.9 µs
-vs ~6.8 µs for cuBLASLt — the ~1 µs setup tax the tiny regime amortizes.
+- At n=16 the kernel wins every batch point at 0.65 to 0.87× vendor time;
+  at n=32 and n=64 cuBLASLt's tensor-core path wins everywhere, up to
+  18.1×. Per the kill criterion the table ships as measured.
+- Accuracy vs an FP64 oracle: relative L2 error is 7 to 14% of the
+  first-principles bound u·√K; the e5m2/e4m3 ratio is 2.0 as predicted by
+  the mantissa count; cuBLASLt matches the kernel's error to printed
+  precision.
+- Launch-overhead exhibit (batch=1): kernel fixed cost ~5.9 µs vs ~6.8 µs
+  for cuBLASLt, the ~1 µs setup tax the tiny regime amortizes.
 
-![time vs batch](data/fp8_bench.png)
+## Honest limits
 
-## Accuracy (vs FP64 oracle, batch=64, fixed seeds)
+- The launch-tax hypothesis survives only at the smallest size tested.
+  n=32 and n=64 are vendor wins at every batch, published.
+- The n=16 batch=65536 cell is bimodal even governor-pinned (kernel reps
+  span 707 to 2282 µs inside a single run; one of four same-morning pinned
+  runs lost 1.55× there). The other three n=16 cells won in all four runs.
+- e5m2: cuBLASLt's heuristic offers no algo for the row-major strided
+  batched configuration on this stack; kernel-side e5m2 tracks e4m3 within
+  ~2% (7% at the n=16 batch=1 launch-noise floor).
+- FP4 e2m1 exists as an accuracy appendix only: measured 11.1 to 11.3× the
+  e4m3 error, above the 4× mantissa-count prediction, because on U(-1,1)
+  data the e2m1 grid rounds every input to {0, ±0.5, ±1}. Never the kernel
+  bet.
 
-Relative L2 error against an FP64 reference of the unquantized inputs,
-compared to the first-principles bound u·√K (u = 2^-4 e4m3, 2^-3 e5m2;
-assertion at 3× that):
-
-| n | e4m3 rel | e5m2 rel | e5m2/e4m3 | cuBLASLt e4m3 rel |
-|--:|--|--|--|--|
-| 16 | 3.39e-2 | 6.74e-2 | 1.99 | 3.39e-2 |
-| 32 | 3.34e-2 | 6.71e-2 | 2.01 | 3.34e-2 |
-| 64 | 3.34e-2 | 6.69e-2 | 2.00 | 3.34e-2 |
-
-Measured error is 7–14% of u·√K (2–5% of the 3× assertion bound); the
-e5m2/e4m3 ratio is 2.0 as predicted by the mantissa count. cuBLASLt matches
-the kernel's error to printed precision — input quantization dominates,
-accumulation is FP32 on both sides. FP4 e2m1 appendix (`test_fp4_accuracy`):
-measured 11.1–11.3× the e4m3 error — well above the 4× mantissa-count
-prediction, because on U(-1,1) data the e2m1 grid rounds every input to
-{0, ±0.5, ±1}: a quarter of the inputs become exact zeros and the error is
-absolute-grid dominated, not relative-roundoff dominated. Degenerate inputs:
-all-zeros give exact zeros; ±900-magnitude inputs saturate (SATFINITE
-quantization, counted: ~50% of entries) with no NaN/Inf in any output.
-
-## Status
-
-CV-4 built and measured 2026-10-25: CTest 2/2 (correctness + FP4 appendix),
-benchmark table above, win zone n=16. Governor-pinned idle-machine rerun
-2026-10-30: table re-filled (win zone unchanged; n=64 batch=1 loss deepened
-to 18.1x; the n=16 batch=65536 cell is bimodal even pinned — see the claim
-caveat). Per the kill criterion the table ships as measured.
-
-
-
-## Numerics (the point of the exercise)
-
-- Inputs quantized to FP8 e4m3 (default) or e5m2 (flag) with round-to-
-  nearest-even via CUDA 13.2 `cuda_fp8.h`; accumulation in FP32
-  (CUDA cores for the kernel; tensor cores inside cuBLASLt).
-- Accuracy measured against an FP64 reference: error bounds stated from
-  first principles (mantissa bits × √K random-walk), not just reported.
-- FP4 e2m1 appears as an ACCURACY APPENDIX only (built separately), never
-  as the kernel bet.
-- See the [gpu-bundle-adjustment](https://github.com/FireHorseAutumn/gpu-bundle-adjustment) precision study for why FP8 belongs in
-  tensor-core-style accumulate paths and never in measurement space.
-
-## Layout
-
-- `docs/SPEC.md` — spec of record (kernel design, baseline config, tests)
-- `include/ftg/` — device kernels and host helpers (header-only, no CUTLASS)
-- `benchmarks/` — vs cuBLASLt, JSON out
-- `tests/` — correctness vs FP64 oracle, error-bound assertions
-- `tools/` — plots; `data/` — results
-
-## Toolchain
+## Build and test
 
 CUDA 13.2, sm_120 (RTX 5060 Laptop); g++-15 host compiler (nvcc rejects
-g++-16 — auto-detect block in CMakeLists). ninja + ccache.
+g++-16, auto-detect block in CMakeLists). ninja + ccache.
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+## Repository layout
+
+- `docs/SPEC.md`: spec of record (kernel design, baseline config, tests)
+- `include/ftg/`: device kernels and host helpers (header-only, no CUTLASS)
+- `benchmarks/`: vs cuBLASLt, JSON out
+- `tests/`: correctness vs FP64 oracle, error-bound assertions
+- `tools/`: plots; `data/`: results
+
+## Deeper reading
+
+- `docs/RUNGS.md`: the full record: the measured claim with its stability
+  caveat, the accuracy study with the FP4 appendix, and the numerics
+  rationale.
+- `docs/SPEC.md`: the spec of record.
+- `data/fp8_bench.json`: raw per-rep timings and machine metadata.
